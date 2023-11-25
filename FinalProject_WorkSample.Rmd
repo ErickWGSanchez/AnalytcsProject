@@ -1,0 +1,369 @@
+---
+title: STAT456 Final Project
+author: Erick Guevara 
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+widgets:
+- mathjax
+- bootstrap
+- quiz
+- shiny
+- interactive
+- latex_macros
+---
+
+# STAT 456, Spring 2023
+# Final Project, May 1 -- 11, 2023 
+
+&nbsp;
+
+#### Instructions: 
+
+* Every report should have the title (STAT 456 ~ Final Project), author, and date on the first page.
+
+* All tables and figures should be clearly labeled and numbered.  For your pdf, all pages should be numbered, and set the font size of the main body of the report to be 12pt.
+
+* Make sure you proofread your report before submitting it.
+
+* You are under no circumstances allowed to consult with any person other than your professor. You are expected to comply with George Mason's policy on academic integrity. Unauthorized help will result in failing the exam.
+
+* Please do not ask me or TA to debug your codes.
+
+
+**Good luck!**
+
+
+\newpage
+```{R}
+library(knitr)
+knitr::opts_chunk$set(echo = TRUE)
+tinytex::install_tinytex(force = TRUE)
+
+library(knitr)
+library(ggplot2)
+library(caret)
+library(glmnet)
+library(class)
+library(tidyverse)
+```
+
+## Problem 1
+
+Humans have greatly associated themselves with Songs & Music. It can improve mood, decrease pain and anxiety, and facilitate opportunities for emotional expression. Research suggests that music can benefit our physical and mental health in numerous ways.
+
+Lately, multiple studies have been carried out to understand songs and it's popularity based on certain factors. Such song samples are broken down & their parameters are recorded to tabulate. Predicting the Song Popularity is the main aim.
+
+
+**Data**
+
+The dataset is provided in `song_data.csv`. There are $18,835$ observations. To judge the predictive performance of your selected model, please hold the last $3000$ observations as the test set to estimate the prediction error $\sum_{i=15836}^{18835}(Y_i-\hat{Y}_i)^2$, where $Y_i$ is the popularity of the $i$th song. So only use the first 15,835 observations for estimating/training your model.
+
+**Methods**
+
+
+
+
+
+```{R}
+library(glmnet)
+
+songs <- read.csv('C:/Users/justd/Desktop/song_data.csv', header=T)
+
+songs_lm <- lm(song_popularity ~. -song_name -key -audio_mode -time_signature, data=songs)
+
+#Checks if the assumptions/conditions are met
+summary(songs_lm)
+plot(songs_lm)
+
+
+#Lasso Regression 
+train <-songs[1:15836, ]
+test<- songs[15837:18835, ]
+
+x_train <- as.matrix(train[, 3:14])
+y_train <- as.matrix(train[, 2])
+
+x_test <- as.matrix(test[, 3:14])
+y_test <- as.matrix(test[, 2])
+
+las_model <- cv.glmnet(x_train, y_train, alpha = 1)
+
+plot(las_model)
+
+#10k Fold Cross Validation
+
+cbind(lambda=round(las_model$lambda, 1),
+      cvm=signif(las_model$cvm,7),
+      cvsd=signif(las_model$cvsd,5))
+
+cvm <- las_model$cvm
+sub1 <- which.min(cvm)
+
+cvmTest <- cvm[sub1]+
+las_model$cvsd[sub1]
+sub2 <- which(cvm < cvmTest)[1]
+
+
+las_model$lambda[sub2]
+las_model$lambda.1se
+
+#What MSE min and 1SE values start on
+lambda.min <- las_model$lambda.min
+lambda.1se <- las_model$lambda.1se
+
+
+
+lasso.predBest <- predict(las_model, s=lambda.min,
+ newx=x_test)
+lasso.pred1se <- predict(las_model, s=lambda.1se,
+ newx=x_test)
+
+pmse.best <- mean((lasso.predBest-y_test)^2)
+mean((lasso.pred1se-y_test)^2)
+
+
+cat("This is the predicted mean square error value: ", pmse.best)
+
+lasso.coef=predict(las_model,type="coefficients",
+ s=lambda.min)
+
+
+lasso.coef2=predict(las_model,type="coefficients",
+ s=lambda.1se)
+
+
+lasso.coef
+
+
+```
+The R-square of 0.04566 shows a very low correlation score between the response and predictor variables. Residual vs fitted values plot show a spread across the zero line showing a stable variance.To check the normality of the data we use the normal qq plot which appears to be fairly linear. The Scale location plot appears to be randomly scattered across the horizontal band. The Residuals vs leverage plots appear to show a almost no outliers with 2 of them possibly being influential points. 
+
+The variables selected from the lasso regression mode is shown above as the lambda minimum choose most of the variables to be relevant to the model. The mean square error prediction plot shows which lambda values are best for least errors and which is the highest. The model output was similar in output as it kept almost all of the variables for it. 
+
+\newpage
+## Problem 2. 
+
+**Diabetes Data Set.** This dataset is originally from the National Institute of Diabetes and Digestive and Kidney Diseases. The objective of the dataset is to diagnostically predict whether a patient has diabetes based on certain diagnostic measurements included in the dataset. Several constraints were placed on the selection of these instances from a larger database. In particular, all patients here are females at least 21 years old of Pima Indian heritage. 
+
+From the data set in the `diabetes.csv` file, we can find several variables, some of which are independent (several medical predictor variables) and only one target dependent variable (Outcome).
+
+
+Columns	Description:
+
+* `Pregnancies`: To express the number of pregnancies;
+
+* `Glucose`: To express the Glucose level in blood;
+
+* `BloodPressure`: To express the Blood pressure measurement
+
+* `SkinThickness`: To express the thickness of the skin
+
+* `Insulin`: To express the Insulin level in blood
+
+* `BMI`: To express the Body mass index
+
+* `DiabetesPedigreeFunction`: To express the Diabetes percentage
+
+* `Age`: To express the age
+
+* `Outcome`: To express the final result 1 is Yes and 0 is No.
+
+Let's consider the classification of `Outcome` using the rest of the variables in the data. In the following, we split the data into two parts: the first half of the data set as the training set and the second half as test data to examine the performance of a classification method.
+
+```{R}
+dia <- read.csv('C:/Users/justd/Desktop/diabetes.csv', header=T)
+```
+
+
+(a)  Use the training data to build a logistic regression model and predict the probability that an individual in the test data is healthy or has heart disease, given the values of the predictors. Classify the individual as healthy or having heart disease based on whether the predicted probability is above or below 0.5.
+```{R}
+dia$Outcome <- as.factor(dia$Outcome)
+
+train_diabetes <- dia[1:384,]
+test_diabetes <- dia[385:768,]
+
+
+diabetes_mod <- glm(Outcome ~ ., data = train_diabetes, family = 'binomial')
+diabetes.probs <- predict(diabetes_mod, type = "response")
+diabetes.pred <- rep(0, 768)
+diabetes.pred[diabetes.probs > 0.5] <- "unhealthy"
+diabetes.pred[diabetes.probs < 0.5] <- "Healthy"
+
+
+```
+
+(b) You can now choose up to 10 different sets of predictors and repeat part (a). For each selection, generate a confusion matrix to evaluate the correct and incorrect classifications of observations in the test set. Define the **test error** as the proportion of misclassified observations within the test set. Report the model that provides the smallest test error.
+
+Model 1
+```{R}
+library(caret)
+
+diabetes_mod1 <- glm(Outcome ~ Pregnancies + Glucose + BloodPressure + 
+                      SkinThickness + Insulin, data = train_diabetes, 
+                    family = 'binomial')
+diabetes1.probs <- predict(diabetes_mod1, new_data = test_diabetes, 
+                          type = "response")
+diabetes1.pred <- rep(0, 768)
+diabetes1.pred[diabetes1.probs > 0.5] <- "1"
+diabetes1.pred[diabetes1.probs < 0.5] <- "0"
+diabetes1.pred <- as.factor(diabetes1.pred)
+confusionMatrix((dia$Outcome), diabetes1.pred)
+
+
+
+```
+The misclassification rate is 1-0.6562=.3438.
+
+
+Model 2
+
+```{r}
+library(caret)
+diabetes_mod2 <- glm(Outcome ~ BMI + DiabetesPedigreeFunction + Age, 
+                     data = train_diabetes, family = 'binomial')
+diabetes2.probs <- predict(diabetes_mod2, new_data = test_diabetes, 
+                          type = "response")
+diabetes2.pred <- rep(0, 768)
+diabetes2.pred[diabetes2.probs > 0.5] <- "1"
+diabetes2.pred[diabetes2.probs < 0.5] <- "0"
+diabetes2.pred <- as.factor(diabetes2.pred)
+confusionMatrix((dia$Outcome), diabetes2.pred)
+```
+The misclassification rate for model 2 is 1-0.6432 = 0.3568.
+
+Model 3:
+```{r}
+library(caret)
+diabetes_mod3 <- glm(Outcome ~ Pregnancies + Glucose + BMI, 
+                     data = train_diabetes, family = 'binomial')
+diabetes3.probs <- predict(diabetes_mod3, new_data = test_diabetes, 
+                          type = "response")
+diabetes3.pred <- rep(0, 768)
+diabetes3.pred[diabetes3.probs > 0.5] <- "1"
+diabetes3.pred[diabetes3.probs < 0.5] <- "0"
+diabetes3.pred <- as.factor(diabetes3.pred)
+confusionMatrix((dia$Outcome), diabetes3.pred)
+```
+The misclassification rate for model 3 is 1-0.6693 = 0.3307.
+
+Model 4:
+```{r}
+library(caret)
+diabetes_mod4 <- glm(Outcome ~ BMI + Age + BloodPressure + Insulin, 
+                     data = train_diabetes, family = 'binomial')
+diabetes4.probs <- predict(diabetes_mod4, new_data = test_diabetes, 
+                          type = "response")
+diabetes4.pred <- rep(0, 768)
+diabetes4.pred[diabetes4.probs > 0.5] <- "1"
+diabetes4.pred[diabetes4.probs < 0.5] <- "0"
+diabetes4.pred <- as.factor(diabetes4.pred)
+confusionMatrix((dia$Outcome), diabetes4.pred)
+```
+The mis-classification rate for model 4 is 1-0.6354 = 0.3646.
+
+The model with the smallest error is model 3 (Outcome ~ Pregnancies + Glucose + BMI). 
+
+
+(c) Based on all continuous predictors, use the KNN method to predict whether the individual is healthy or has heart disease. Try $k=1$, $k=3$, $k=5$ and $k=10$. For each of the above $k$, report the test error rate. Which $k$ gives the smallest error rate? 
+
+For k= 1:
+```{R}
+set.seed(1)
+kNN_diabetes1 <- knn(train_diabetes[,-9], test_diabetes[,-9], 
+                     train_diabetes$Outcome, 1)
+misclassification_rate1 <- sum(kNN_diabetes1 != train_diabetes$Outcome) / length(train_diabetes$Outcome)
+misclassification_rate1
+
+```
+Misclassification rate of 0.4427. 
+
+For k = 3:
+```{R}
+set.seed(1)
+kNN_diabetes3 <- knn(train_diabetes[,-9], test_diabetes[,-9], 
+                     train_diabetes$Outcome, 3)
+misclassification_rate3 <- sum(kNN_diabetes3 != train_diabetes$Outcome) / length(train_diabetes$Outcome)
+misclassification_rate3
+```
+Misclassification rate is 0.4557
+
+For k = 5:
+```{R}
+set.seed(1)
+kNN_diabetes5 <- knn(train_diabetes[,-9], test_diabetes[,-9], 
+                     train_diabetes$Outcome, 5)
+misclassification_rate5 <- sum(kNN_diabetes5 != train_diabetes$Outcome) / length(train_diabetes$Outcome)
+misclassification_rate5
+```
+Misclassification rate is 0.46875.
+
+For k = 10:
+```{R}
+set.seed(1)
+kNN_diabetes10 <- knn(train_diabetes[,-9], test_diabetes[,-9], 
+                      train_diabetes$Outcome, 10)
+misclassification_rate10 <- sum(kNN_diabetes10 != train_diabetes$Outcome) / length(train_diabetes$Outcome)
+misclassification_rate10
+```
+Misclassification rate is 0.4167.
+
+The K that gives the smallest misclassification rate is k = 10. 
+
+
+
+(d) Experiment with up to 10 different sets of continuous predictors and repeat part (c). Report the KNN method (including selected predictors and the chosen $k$) that yields the smallest test error.
+
+```{R}
+train_diabetes1 <- train_diabetes %>% select(c(Pregnancies, Glucose, 
+                                              BloodPressure, SkinThickness,
+                                              Insulin, Outcome))
+test_diabetes1 <- test_diabetes %>% select(c(Pregnancies, Glucose, 
+                                              BloodPressure, SkinThickness,
+                                              Insulin, Outcome))
+set.seed(1)
+kNN_diabetesmod1 <- knn(train_diabetes1[,-6], test_diabetes1[,-6], 
+                      train_diabetes1$Outcome, 10)
+misclassification_ratemod1 <- sum(kNN_diabetesmod1 != train_diabetes1$Outcome) / length(train_diabetes1$Outcome)
+misclassification_ratemod1
+```
+
+```{R}
+train_diabetes2 <- train_diabetes %>% select(c(BMI, DiabetesPedigreeFunction, 
+                                               Age, Outcome))
+test_diabetes2 <- test_diabetes %>% select(c(BMI, DiabetesPedigreeFunction, 
+                                               Age, Outcome))
+set.seed(1)
+kNN_diabetesmod2 <- knn(train_diabetes2[,-4], test_diabetes2[,-4], 
+                      train_diabetes2$Outcome, 10)
+misclassification_ratemod2 <- sum(kNN_diabetesmod2 != train_diabetes2$Outcome) / length(train_diabetes2$Outcome)
+misclassification_ratemod2
+```
+
+```{R}
+train_diabetes3 <- train_diabetes %>% select(c(Pregnancies, Glucose, BMI, 
+                                               Outcome))
+test_diabetes3 <- test_diabetes %>% select(c(Pregnancies, Glucose, BMI, 
+                                               Outcome))
+set.seed(1)
+kNN_diabetesmod3 <- knn(train_diabetes3[,-4], test_diabetes3[,-4], 
+                      train_diabetes3$Outcome, 10)
+misclassification_ratemod3 <- sum(kNN_diabetesmod3 != train_diabetes3$Outcome) / length(train_diabetes3$Outcome)
+misclassification_ratemod3
+```
+
+```{R}
+train_diabetes4 <- train_diabetes %>% select(c(BMI, Age, BloodPressure, Insulin,
+                                               Outcome))
+test_diabetes4 <- test_diabetes %>% select(c(BMI, Age, BloodPressure, Insulin,
+                                               Outcome))
+set.seed(1)
+kNN_diabetesmod4 <- knn(train_diabetes4[,-5], test_diabetes4[,-5], 
+                      train_diabetes4$Outcome, 10)
+misclassification_ratemod4 <- sum(kNN_diabetesmod4 != train_diabetes4$Outcome) / length(train_diabetes4$Outcome)
+misclassification_ratemod4
+```
+
+The KNN method that had the lowest misclassification rate is model 3. The predictors in model 3 are Pregnancies, Glucose, and BMI and the chosen K is 10. 
+
